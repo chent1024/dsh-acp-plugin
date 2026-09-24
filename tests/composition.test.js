@@ -15,7 +15,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { apply, Config, inject, name } from '../lib/index.js'
 import { fakeAgentPath, spawnThroughSeam } from './spawn-seam.js'
@@ -37,8 +37,18 @@ import { fakeAgentPath, spawnThroughSeam } from './spawn-seam.js'
 async function boot(options = {}) {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
-  ctx.subprocess = { spawn: spawnThroughSeam }
-  if (options.sessions !== undefined) ctx.sessions = options.sessions
+  // Real services, not hand-planted objects: the Cordis property proxy refuses
+  // an undeclared service, so a plugin that injects one must be given a
+  // registered Service. Planting a bare object would make `apply` throw for a
+  // reason the harness never produces.
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'subprocess') }
+    spawn(spec) { return spawnThroughSeam(spec) }
+  })
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'sessions') }
+    get(id) { return options.sessions?.get?.(id) }
+  })
   const fiber = await ctx.plugin({ name, inject, apply, Config }, {
     agents: options.agents ?? {
       fake: { displayName: 'Fake ACP', command: process.execPath, args: [fakeAgentPath()], cwd: process.cwd() },
@@ -182,7 +192,14 @@ test('keeps serving when a route conflicts with another adapter', async () => {
   }
   llm.registerAdapter(['acp:taken'], new Foreign())
 
-  ctx.subprocess = { spawn: spawnThroughSeam }
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'subprocess') }
+    spawn(spec) { return spawnThroughSeam(spec) }
+  })
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'sessions') }
+    get() { return undefined }
+  })
   // The whole replacement is refused, so the plugin keeps the routes it had
   // rather than dropping everything over one conflict.
   const fiber = await ctx.plugin({ name, inject, apply, Config }, {
@@ -220,7 +237,14 @@ test('registers the subagent provider on the real service and withdraws it on di
   const ctx = new Ctx()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(Subagents)
-  ctx.subprocess = { spawn: spawnThroughSeam }
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'subprocess') }
+    spawn(spec) { return spawnThroughSeam(spec) }
+  })
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'sessions') }
+    get() { return undefined }
+  })
   const fiber = await ctx.plugin({ name, inject, apply, Config }, {
     agents: { fake: { ...FAKE } },
   })

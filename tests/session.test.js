@@ -12,7 +12,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { apply, Config, inject, name } from '../lib/index.js'
 import { resolveCwd } from '../lib/adapter/index.js'
@@ -26,8 +26,16 @@ import { fakeAgentPath, spawnThroughSeam } from './spawn-seam.js'
 async function boot(options = {}) {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
-  ctx.subprocess = { spawn: spawnThroughSeam }
-  if (options.sessions !== undefined) ctx.sessions = options.sessions
+  // Real services rather than hand-planted objects: the Cordis property proxy
+  // refuses an undeclared service, so an injected one must be registered.
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'subprocess') }
+    spawn(spec) { return spawnThroughSeam(spec) }
+  })
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'sessions') }
+    get(id) { return options.sessions?.get?.(id) }
+  })
   const fiber = await ctx.plugin({ name, inject, apply, Config }, {
     agents: options.agents ?? {},
   })
