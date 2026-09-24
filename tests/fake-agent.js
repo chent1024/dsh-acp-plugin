@@ -91,6 +91,7 @@ const app = createAcpAgentApp({ name: 'fake-acp-agent' })
     return Promise.resolve({ configOptions })
   })
   .onRequest(methods.agent.session.prompt, ({ params, client }) => {
+    promptCount += 1
     const text = params.prompt
       .map((block) => (block.type === 'text' ? block.text : ''))
       .join('')
@@ -104,11 +105,21 @@ const app = createAcpAgentApp({ name: 'fake-acp-agent' })
       }
       return {
         stopReason: 'end_turn',
-        usage: { totalTokens: 11, inputTokens: 7, outputTokens: 4 },
+        // Cumulative session totals that GROW per turn, as a real agent's do.
+        // A constant reading would make every later delta zero, which cannot
+        // distinguish a correct delta from an omitted one.
+        usage: {
+          totalTokens: promptCount * 11,
+          inputTokens: promptCount * 7,
+          outputTokens: promptCount * 4,
+        },
       }
     })()
   })
   .onNotification(methods.agent.session.cancel, () => {})
+
+/** Prompts served by this session; drives the cumulative usage totals. */
+let promptCount = 0
 
 const connection = app.connect(ndJsonStream(
   NodeWritable.toWeb(process.stdout),

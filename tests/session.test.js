@@ -208,11 +208,12 @@ test('the second turn reports usage as a delta, not a cumulative total', async (
         { role: 'user', content: [{ type: 'text', text: 'two' }] },
       ],
     })
-    // The fake agent reports the same cumulative totals each turn, so the second
-    // turn's delta is zero rather than the cumulative figure repeated.
+    // The fake agent reports growing cumulative totals, so the second turn must
+    // report the DELTA rather than repeating the cumulative figure. Its first
+    // turn is 7 in / 4 out, the second 14 in / 8 out, so the delta is 7 and 4.
     const usage = second.find((chunk) => chunk.type === 'usage')
-    assert.equal(usage.usage.inputTokens, 0)
-    assert.equal(usage.usage.outputTokens, 0)
+    assert.equal(usage.usage.inputTokens, 7)
+    assert.equal(usage.usage.outputTokens, 4)
   } finally {
     await fiber.dispose()
   }

@@ -100,3 +100,32 @@ test('every produced stream has usage before finish and nothing after', () => {
   const closed = new Set(chunks.filter((c) => c.type === 'block-end').map((c) => c.index))
   assert.deepEqual([...opened].sort(), [...closed].sort())
 })
+test('omits a usage reading the agent never measured', async () => {
+  // A shipping CLI (Qoder) reports every counter as zero. Emitting that would
+  // hand the harness a measurement it would price as a free turn — a claim the
+  // agent never made. The `usage` chunk is optional, so nothing is reported.
+  const { reportableUsage } = await import('../lib/adapter/index.js')
+  const zero = reportableUsage({
+    usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    reading: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 },
+  })
+  assert.equal(zero.usage, undefined)
+  // The baseline still advances, so a later measured turn yields a true delta.
+  assert.ok(zero.reading)
+})
+
+test('reports a usage reading that carries information', async () => {
+  const { reportableUsage } = await import('../lib/adapter/index.js')
+  const measured = reportableUsage({
+    usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10 },
+    reading: { inputTokens: 7, outputTokens: 3, totalTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 },
+  })
+  assert.deepEqual(measured.usage, { inputTokens: 7, outputTokens: 3, totalTokens: 10 })
+})
+
+test('treats a cache-only or reasoning-only reading as measured', async () => {
+  const { reportableUsage } = await import('../lib/adapter/index.js')
+  const baseline = { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 }
+  assert.ok(reportableUsage({ usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 5 }, reading: baseline }).usage)
+  assert.ok(reportableUsage({ usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, reasoningTokens: 9 }, reading: baseline }).usage)
+})
