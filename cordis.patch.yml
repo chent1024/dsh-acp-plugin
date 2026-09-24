@@ -1,0 +1,27 @@
+# dsh bundle patch: mounts the ACP agents plugin.
+#
+# The row is host-plane. It registers every configured ACP agent as an LLM
+# provider route (`acp:<id>`, so it appears in the model picker and can be a
+# session default) and as a subagent provider, and publishes the
+# `/api/acp-agents` route the Models page card edits.
+#
+# Agents are configuration, not composition: the row mounts with none, and the
+# Models page settings section supplies them. Override or seed them in your
+# profile's own $DSH_HOME/profiles/<name>/cordis.patch.yml, which is applied
+# after every bundle layer:
+#
+# - id: acp-agents
+#   config:
+#     agents:
+#       gemini:
+#         displayName: Gemini CLI
+#         command: npx
+#         args: ["-y", "@google/gemini-cli@latest", "--acp"]
+#       opencode:
+#         displayName: opencode
+#         command: opencode
+#         args: ["acp"]
+
+- insert:
+    - id: acp-agents
+      name: dsh-acp-agents

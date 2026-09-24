@@ -1,0 +1,237 @@
+/**
+ * Real-composition acceptance test.
+ *
+ * This boots the plugin against the ACTUAL harness runtime — a real Cordis
+ * context with the real `dsh-llm` service — and asserts what the harness did
+ * with it, rather than what the plugin's own units do. It is the evidence that
+ * the registration path, the adapter contract, and the settings surface work
+ * together, which hand-built stubs cannot show.
+ *
+ * One case runs a full model call: harness request in, real ACP handshake and
+ * prompt over stdio, harness chunk stream out.
+ *
+ * @module dsh-acp-plugin/tests/composition.test
+ */
+
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { Context } from '@deepseek-ai/cordis'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
+import { apply, Config, inject, name } from '../lib/index.js'
+import { fakeAgentPath, spawnThroughSeam } from './spawn-seam.js'
+
+/**
+ * Boot the plugin against the real LLM service.
+ *
+ * Only the subprocess seam is supplied: the plugin never imports
+ * `node:child_process` itself, so this one seam is what lets the test run a real
+ * child process without booting an entire product profile.
+ *
+ * `ctx.plugin` receives the RAW config, exactly as the Loader hands it over: the
+ * framework runs the schema itself and gives `apply` the resolved value carrying
+ * the genuine `Volatile` refs the plugin reads.
+ *
+ * @param {{ agents?: Record<string, any>, sessions?: any }} [options] - configuration under test.
+ * @returns {Promise<{ ctx: any, llm: any, fiber: any }>} the context, its LLM service, and the plugin fiber.
+ */
+async function boot(options = {}) {
+  const ctx = new Context()
+  await ctx.plugin(LlmRuntime)
+  ctx.subprocess = { spawn: spawnThroughSeam }
+  if (options.sessions !== undefined) ctx.sessions = options.sessions
+  const fiber = await ctx.plugin({ name, inject, apply, Config }, {
+    agents: options.agents ?? {
+      fake: { displayName: 'Fake ACP', command: process.execPath, args: [fakeAgentPath()], cwd: process.cwd() },
+    },
+  })
+  return { ctx, llm: ctx.get('llm'), fiber }
+}
+
+/** The default agent definition used by most cases. */
+const FAKE = { displayName: 'Fake ACP', command: process.execPath, args: [fakeAgentPath()], cwd: process.cwd() }
+
+test('registers a configured agent as a live provider route', async () => {
+  const { llm, fiber } = await boot()
+  try {
+    const providers = llm.listProviders()
+    assert.ok(providers.some((provider) => provider.id === 'acp:fake'), `routes: ${JSON.stringify(providers)}`)
+    assert.equal(providers.find((provider) => provider.id === 'acp:fake').name, 'Fake ACP')
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('declares the route in the configurable-provider directory with a settings address', async () => {
+  const { llm, fiber } = await boot()
+  try {
+    const entry = llm.listConfigurableProviders().find((candidate) => candidate.provider === 'acp:fake')
+    assert.ok(entry, 'the directory carries the route')
+    assert.equal(entry.settingsNs, 'acp-agents')
+    assert.deepEqual(entry.settingsPath, ['agents', 'fake'])
+    assert.equal(entry.displayName, 'Fake ACP')
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('lists the agent model catalog through the real registry', async () => {
+  const { llm, fiber } = await boot()
+  try {
+    const models = await llm.listModels('acp:fake')
+    assert.deepEqual(models.map((model) => model.id), ['fake-large', 'fake-small'])
+    assert.equal(models[0].name, 'Fake Large')
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('resolves reasoning metadata for an agent model', async () => {
+  const { llm, fiber } = await boot()
+  try {
+    const resolved = await llm.resolveModelInfo('acp:fake', 'fake-large')
+    assert.equal(resolved.provider, 'acp:fake')
+    assert.deepEqual(resolved.reasoning.efforts.map((effort) => effort.id), ['low', 'medium', 'high'])
+    assert.equal(resolved.reasoning.defaultEffort, 'medium')
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('serves a real model call end to end over the ACP protocol', async () => {
+  const { llm, fiber } = await boot()
+  try {
+    const chunks = []
+    for await (const chunk of llm.stream({
+      provider: 'acp:fake',
+      model: 'fake-large',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+    })) {
+      chunks.push(chunk)
+    }
+    const text = chunks.filter((chunk) => chunk.type === 'text-delta').map((chunk) => chunk.text).join('')
+    assert.equal(text, 'echo:User: hello')
+    const finish = chunks.find((chunk) => chunk.type === 'finish')
+    assert.equal(finish.reason.kind, 'stop')
+    // The harness invariant the runtime enforces: usage before finish, nothing after.
+    const finishAt = chunks.findIndex((chunk) => chunk.type === 'finish')
+    const usageAt = chunks.findIndex((chunk) => chunk.type === 'usage')
+    assert.ok(usageAt >= 0 && usageAt < finishAt, `chunks: ${JSON.stringify(chunks)}`)
+    assert.equal(chunks.length, finishAt + 1)
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('reports an unconfigured route as a terminal error rather than an empty success', async () => {
+  const { llm, fiber } = await boot()
+  try {
+    const chunks = []
+    for await (const chunk of llm.stream({
+      provider: 'acp:never-configured',
+      model: 'x',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    })) {
+      chunks.push(chunk)
+    }
+    const finish = chunks.find((chunk) => chunk.type === 'finish')
+    // The runtime refuses an unknown route before any adapter runs.
+    assert.equal(finish.reason.kind, 'error')
+    assert.equal(finish.reason.failure.code, 'NO_ADAPTER')
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('withdraws every registration when the plugin fiber is disposed', async () => {
+  const { llm, fiber } = await boot()
+  assert.ok(llm.listProviders().length > 0)
+  assert.ok(llm.listConfigurableProviders().length > 0)
+  await fiber.dispose()
+  assert.deepEqual(llm.listProviders(), [])
+  assert.deepEqual(llm.listConfigurableProviders(), [])
+})
+
+test('mounts dormant with no agents and registers nothing', async () => {
+  const { llm, fiber } = await boot({ agents: {} })
+  try {
+    assert.deepEqual(llm.listProviders(), [])
+    assert.deepEqual(llm.listConfigurableProviders(), [])
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('rejects an agent definition with no command at config validation', async () => {
+  // `command` is a required Config field, so an incomplete agent fails loud at
+  // load rather than mounting a route that would fail on first use.
+  assert.throws(
+    () => Config({ agents: { broken: { displayName: 'Broken' } } }),
+    /command/,
+  )
+})
+
+test('keeps serving when a route conflicts with another adapter', async () => {
+  const ctx = new Context()
+  await ctx.plugin(LlmRuntime)
+  const llm = ctx.get('llm')
+  const { LlmAdapter } = await import('@deepseek-ai/dsh-llm')
+
+  // A foreign adapter claims one of the two routes this plugin will declare.
+  class Foreign extends LlmAdapter {
+    async * stream() { /* never called */ }
+  }
+  llm.registerAdapter(['acp:taken'], new Foreign())
+
+  ctx.subprocess = { spawn: spawnThroughSeam }
+  // The whole replacement is refused, so the plugin keeps the routes it had
+  // rather than dropping everything over one conflict.
+  const fiber = await ctx.plugin({ name, inject, apply, Config }, {
+    agents: {
+      taken: { displayName: 'Taken', command: process.execPath, args: [fakeAgentPath()] },
+      free: { displayName: 'Free', command: process.execPath, args: [fakeAgentPath()] },
+    },
+  })
+  try {
+    assert.deepEqual(llm.listProviders().map((provider) => provider.id), ['acp:taken'])
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('a second agent on the same plugin is served independently', async () => {
+  const { llm, fiber } = await boot({
+    agents: {
+      one: { ...FAKE, displayName: 'One' },
+      two: { ...FAKE, displayName: 'Two' },
+    },
+  })
+  try {
+    const routes = llm.listProviders().map((provider) => provider.id).sort()
+    assert.deepEqual(routes, ['acp:one', 'acp:two'])
+    const models = await llm.listModels('acp:two')
+    assert.equal(models[0].provider, 'acp:two')
+  } finally {
+    await fiber.dispose()
+  }
+})
+test('registers the subagent provider on the real service and withdraws it on dispose', async () => {
+  const { Context: Ctx } = await import('@deepseek-ai/cordis')
+  const Subagents = (await import('@deepseek-ai/dsh-subagent')).default
+  const ctx = new Ctx()
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(Subagents)
+  ctx.subprocess = { spawn: spawnThroughSeam }
+  const fiber = await ctx.plugin({ name, inject, apply, Config }, {
+    agents: { fake: { ...FAKE } },
+  })
+  const subs = ctx.get('subagents')
+  const names = () => (typeof subs.listProviders === 'function'
+    ? subs.listProviders()
+    : [...(subs.providers?.keys?.() ?? [])])
+  try {
+    assert.deepEqual(names(), ['acp-agents'])
+  } finally {
+    await fiber.dispose()
+  }
+  assert.deepEqual(names(), [])
+})

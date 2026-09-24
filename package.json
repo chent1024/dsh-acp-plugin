@@ -1,0 +1,62 @@
+{
+  "name": "dsh-acp-agents",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin that runs external ACP agent CLIs (Gemini, Claude Code, Codex, Qwen, opencode, …) as selectable model providers and as subagent providers, configured from the Models settings page.",
+  "type": "module",
+  "main": "lib/index.js",
+  "files": [
+    "lib/",
+    "client/",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "acp",
+    "agent-client-protocol",
+    "gemini-cli",
+    "claude-code",
+    "codex",
+    "opencode",
+    "llm-provider"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/dsh-llm": ">=0.1.5-alpha.1 <0.2.0",
+    "@deepseek-ai/dsh-settings": ">=0.1.5-alpha.1 <0.2.0",
+    "@deepseek-ai/dsh-subagent": ">=0.1.5-alpha.1 <0.2.0",
+    "@deepseek-ai/schemastery": ">=3.18.3 <4"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}
