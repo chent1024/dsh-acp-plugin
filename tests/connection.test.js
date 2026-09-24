@@ -85,11 +85,26 @@ test('delivers agent_message_chunk through the update sink', async () => {
   }
 })
 
-test('surfaces an authentication requirement as its own failure code', async () => {
+test('an advertised auth method does not by itself block a session', async () => {
+  // The exact trap this covers: an agent that is ALREADY signed in through its
+  // own CLI still advertises an auth method. Refusing on the advert alone makes
+  // it unusable. Qoder CLI lists `qodercli-login` while signed in and answers
+  // session/new normally.
   const connection = await open('auth')
   try {
     assert.equal(connection.needsAuthentication, true)
     assert.equal(connection.authMethods.length, 1)
+    const sessionId = await connection.newSession(process.cwd())
+    assert.equal(sessionId, 'fake-session-1')
+  } finally {
+    await connection.dispose()
+  }
+})
+
+test('surfaces a genuine authentication refusal as its own failure code', async () => {
+  const connection = await open('auth-refuses')
+  try {
+    assert.equal(connection.needsAuthentication, true)
     await assert.rejects(
       () => connection.newSession(process.cwd()),
       (error) => {

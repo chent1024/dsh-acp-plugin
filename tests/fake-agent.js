@@ -9,8 +9,9 @@
  *
  * Behaviors:
  *   `ok`        — initialize, session/new, one text answer, end_turn.
- *   `auth`      — initialize advertises an auth method; session/new is still
- *                 allowed so the client's own auth gate is what gets tested.
+ *   `auth`      — initialize advertises an auth method but sessions still work,
+ *                 like a CLI already signed in (Qoder CLI behaves this way).
+ *   `auth-refuses` — advertises a method AND rejects session/new with -32000.
  *   `slow`      — initialize never answers (timeout path).
  *   `exit`      — the process exits immediately (process-death path).
  *   `badversion`— initialize answers with a different protocol version.
@@ -19,7 +20,7 @@
  * @module dsh-acp-plugin/tests/fake-agent
  */
 
-import { agent as createAcpAgentApp, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent as createAcpAgentApp, methods, ndJsonStream, PROTOCOL_VERSION, RequestError } from '@agentclientprotocol/sdk'
 import { Readable as NodeReadable, Writable as NodeWritable } from 'node:stream'
 
 const behavior = process.env.FAKE_ACP_BEHAVIOR ?? 'ok'
@@ -62,17 +63,27 @@ const app = createAcpAgentApp({ name: 'fake-acp-agent' })
       protocolVersion: behavior === 'badversion' ? 99 : PROTOCOL_VERSION,
       agentInfo: { name: 'fake-acp-agent', version: '1.0.0' },
       agentCapabilities: { loadSession: true, sessionCapabilities: { close: {} } },
-      authMethods: behavior === 'auth'
+      authMethods: behavior === 'auth' || behavior === 'auth-refuses'
         ? [{ id: 'fake-login', name: 'Fake login', type: 'agent' }]
         : [],
     })
   })
   .onRequest(methods.agent.authenticate, () => Promise.resolve({}))
-  .onRequest(methods.agent.session.new, ({ params }) => Promise.resolve({
-    sessionId: 'fake-session-1',
-    configOptions,
-    _meta: { cwd: params.cwd },
-  }))
+  .onRequest(methods.agent.session.new, ({ params }) => {
+    // `auth-refuses` models an agent that genuinely demands authentication: it
+    // advertises a method AND rejects the session with ACP's -32000. Plain
+    // `auth` advertises the method but still serves, like Qoder CLI signed in.
+    if (behavior === 'auth-refuses') {
+      // Exactly what the SDK's own `RequestError.authRequired` produces, so the
+      // refusal travels the wire the way a real agent's does.
+      return Promise.reject(RequestError.authRequired({ methods: ['fake-login'] }))
+    }
+    return Promise.resolve({
+      sessionId: 'fake-session-1',
+      configOptions,
+      _meta: { cwd: params.cwd },
+    })
+  })
   .onRequest(methods.agent.session.setConfigOption, ({ params }) => {
     const option = configOptions.find((candidate) => candidate.id === params.configId)
     if (option === undefined) return Promise.reject(new Error(`unknown config option ${params.configId}`))
