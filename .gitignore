@@ -1,3 +1,9 @@
 node_modules/
 *.log
 .DS_Store
+
+# A profile supplies the harness peers and installs this package itself; a
+# committed lockfile would pin resolutions that need not match the running
+# harness, and the plugin's own dependency set is one runtime package.
+pnpm-lock.yaml
+package-lock.json

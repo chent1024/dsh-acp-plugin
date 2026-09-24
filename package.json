@@ -35,7 +35,8 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.4.0"
+    "@agentclientprotocol/sdk": "1.4.0",
+    "zod": "^4.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.0",

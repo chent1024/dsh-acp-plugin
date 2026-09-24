@@ -195,3 +195,9 @@ MIT
 Harness 侧 peer（`dsh-llm`、`dsh-settings`、`dsh-subagent`）声明为
 `>=0.1.5-alpha.1 <0.2.0`。它们由 profile 自己的依赖树提供，而不是由本包安装：profile
 设置了 `autoInstallPeers: false`，因此运行中的 Harness 会提供它们。
+
+`zod` 被声明为直接依赖而非 peer，这是刻意的。ACP SDK 内部 `import "zod/v4"`，但同一
+profile 里的其他插件可能把较旧的 `zod` 提升到 profile 树顶层 ——
+`dsh-plugin-product-subagents` 会带入 `zod@3.23.0`，它没有 `zod/v4` 子路径。由于
+`autoInstallPeers: false` 使 pnpm 不去补足 SDK 自己的 peer 要求，SDK 就会导入失败，
+整个插件随之无法激活。在这里声明 `zod` 让插件自带一个 SDK 真正能用的版本。

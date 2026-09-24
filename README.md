@@ -222,3 +222,11 @@ Harness peers (`dsh-llm`, `dsh-settings`, `dsh-subagent`) are declared for
 `>=0.1.5-alpha.1 <0.2.0`. They are resolved from the profile's own tree, not
 installed by this package: a profile sets `autoInstallPeers: false`, so the
 running harness supplies them.
+
+`zod` is a direct dependency rather than a peer, and that is deliberate. The ACP
+SDK imports `zod/v4`, but another plugin in the same profile may hoist an older
+`zod` to the top of the profile tree — `dsh-plugin-product-subagents` pulls
+`zod@3.23.0`, which has no `zod/v4` subpath. Because `autoInstallPeers: false`
+stops pnpm from filling the SDK's own peer requirement, the SDK would then fail
+to import and the whole plugin would fail to activate. Declaring `zod` here
+makes the plugin carry a version the SDK can actually use.
