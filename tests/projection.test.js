@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   modelOption, projectModels, projectReasoning, reasoningOption,
-  modelSelection, reasoningSelection, selectValues, currentModelId,
+  selectionFor, selectValues, currentModelId,
 } from '../lib/acp/models.js'
 import { TurnAccumulator, finishReasonOf, usageDelta } from '../lib/adapter/stream.js'
 
@@ -78,11 +78,11 @@ test('recognizes a category-less model option by its id', () => {
 })
 
 test('builds a selection request only for an advertised value', () => {
-  assert.deepEqual(modelSelection(OPTIONS, 'small'), { configId: 'model', value: 'small' })
-  assert.equal(modelSelection(OPTIONS, 'nope'), undefined)
-  assert.deepEqual(reasoningSelection(OPTIONS, 'high' === 'high' ? 'low' : ''), { configId: 'reasoning_effort', value: 'low' })
-  assert.equal(reasoningSelection(OPTIONS, 'high'), undefined)
-  assert.equal(reasoningSelection(OPTIONS, undefined), undefined)
+  assert.deepEqual(selectionFor(OPTIONS, 'model', 'small'), { configId: 'model', value: 'small' })
+  assert.equal(selectionFor(OPTIONS, 'model', 'nope'), undefined)
+  assert.deepEqual(selectionFor(OPTIONS, 'reasoning', 'low'), { configId: 'reasoning_effort', value: 'low' })
+  assert.equal(selectionFor(OPTIONS, 'reasoning', 'high'), undefined)
+  assert.equal(selectionFor(OPTIONS, 'mode', 'x'), undefined)
 })
 
 test('ignores non-select options', () => {

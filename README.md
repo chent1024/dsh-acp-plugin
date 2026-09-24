@@ -57,7 +57,7 @@ becomes the provider route `acp:<key>`, so `gemini` is selectable as
 | `args` | `[]` | Arguments passed to it. |
 | `env` | `{}` | Extra environment variables for the child. |
 | `cwd` | the session workspace | Working directory for the child and its ACP session. |
-| `permission` | `reject` | How to answer the agent's permission prompts, which no human sees. |
+| `permission` | `reject` | Permission policy. `allow` also selects the agent's auto-approving session mode, which is what stops the prompts in the first place; `reject` leaves the agent on its own prompting default and answers every request with reject. See [Permission](#permission). |
 | `capabilities` | `none` | Client capabilities to advertise; `fs` offers scoped file reads and writes. |
 | `idleTimeoutMs` | `600000` | How long a bound session is kept before its process is released. |
 
@@ -158,6 +158,35 @@ becomes a named placeholder.
 **An agent's own tool calls are not executed by the harness.** The agent runs
 its tools in its own process. Its tool-call updates are consumed but produce no
 harness tool invocation, so the harness never shows them as executable calls.
+
+## Permission
+
+`permission` is a policy, and ACP realizes permission through a session **mode**,
+not through prompt-time answers alone. The distinction matters: an agent in a mode
+that never asks cannot be governed by answering its questions, because it asks
+none. Selecting the mode is what makes the policy real, so `allow` also chooses
+the narrowest mode that stops the edit prompts — `acceptEdits` on Qoder and
+CodeBuddy — leaving the agent's other checks intact rather than jumping to
+`bypassPermissions` or `yolo`.
+
+`reject` keeps the agent on its own prompting default. Selecting a refuse-only
+mode would deny work the agent would otherwise raise for a decision, which is a
+stronger claim than the policy makes.
+
+An agent that offers no modes, or whose modes cannot be recognized, is left
+alone: the policy then applies only to the requests it does make.
+
+## Reasoning levels
+
+Reasoning is a **per-model** capability, and agents disagree about how to expose
+it. Qoder names it `reasoning_effort` under `category: "model"` and advertises it
+only after a supporting model is selected — `auto` has no levels, `ultimate` has
+six. CodeBuddy and WorkBuddy use the documented `thought_level` category. The
+catalog probe therefore selects each model in turn and records the levels that
+model actually reports, and the model picker shows each model's own set.
+
+Levels are recorded during the probe and the session is returned to the model it
+started on, so discovery never changes what a later turn would use.
 
 **The `capabilities: fs` mode is a stub.** It advertises file read/write and
 refuses both calls with `ACP_FS_UNAVAILABLE`. Advertising the capability without

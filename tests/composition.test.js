@@ -95,13 +95,20 @@ test('lists the agent model catalog through the real registry', async () => {
   }
 })
 
-test('resolves reasoning metadata for an agent model', async () => {
+test('resolves reasoning metadata per model, not per route', async () => {
+  // Reasoning is a per-model capability. A route-wide answer would attribute
+  // levels to a model that does not have them — Qoder advertises none for `auto`
+  // and six for `ultimate`, and CodeBuddy's models differ the same way.
   const { llm, fiber } = await boot()
   try {
-    const resolved = await llm.resolveModelInfo('acp:fake', 'fake-large')
-    assert.equal(resolved.provider, 'acp:fake')
-    assert.deepEqual(resolved.reasoning.efforts.map((effort) => effort.id), ['low', 'medium', 'high'])
-    assert.equal(resolved.reasoning.defaultEffort, 'medium')
+    const large = await llm.resolveModelInfo('acp:fake', 'fake-large')
+    assert.equal(large.provider, 'acp:fake')
+    assert.deepEqual(large.reasoning.efforts.map((effort) => effort.id), ['low', 'medium', 'high'])
+    assert.equal(large.reasoning.defaultEffort, 'medium')
+
+    // The other model advertises no levels at all, and must not inherit any.
+    const small = await llm.resolveModelInfo('acp:fake', 'fake-small')
+    assert.equal(small.reasoning, undefined)
   } finally {
     await fiber.dispose()
   }

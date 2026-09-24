@@ -43,18 +43,31 @@ const configOptions = [
     ],
   },
   {
-    id: 'reasoning_effort',
-    name: 'Reasoning effort',
-    category: 'thought_level',
+    id: 'mode',
+    name: 'Mode',
+    category: 'mode',
     type: 'select',
-    currentValue: 'medium',
+    currentValue: 'default',
     options: [
-      { value: 'low', name: 'Low' },
-      { value: 'medium', name: 'Medium' },
-      { value: 'high', name: 'High' },
+      { value: 'default', name: 'Default', description: 'Prompts for approval' },
+      { value: 'acceptEdits', name: 'Accept Edits', description: 'Auto-approves edit tools' },
+      { value: 'dontAsk', name: "Don't Ask", description: 'Refuses instead of prompting' },
     ],
   },
 ]
+
+/**
+ * Reasoning levels per model, mirroring the real shape: `fake-large` has them,
+ * `fake-small` has none, and the option only exists once that model is selected.
+ * A route-wide answer would be wrong for whichever model it did not describe.
+ */
+const REASONING_BY_MODEL = {
+  'fake-large': [
+    { value: 'low', name: 'Low' },
+    { value: 'medium', name: 'Medium' },
+    { value: 'high', name: 'High' },
+  ],
+}
 
 const app = createAcpAgentApp({ name: 'fake-acp-agent' })
   .onRequest(methods.agent.initialize, () => {
@@ -80,15 +93,27 @@ const app = createAcpAgentApp({ name: 'fake-acp-agent' })
     }
     return Promise.resolve({
       sessionId: 'fake-session-1',
-      configOptions,
+      configOptions: optionsFor(currentModel),
+      modes: {
+        currentModeId: currentMode,
+        availableModes: configOptions
+          .find((option) => option.id === 'mode').options
+          .map(({ value, name, description }) => ({ id: value, name, description })),
+      },
       _meta: { cwd: params.cwd },
     })
   })
   .onRequest(methods.agent.session.setConfigOption, ({ params }) => {
-    const option = configOptions.find((candidate) => candidate.id === params.configId)
+    const option = optionsFor(currentModel).find((candidate) => candidate.id === params.configId)
     if (option === undefined) return Promise.reject(new Error(`unknown config option ${params.configId}`))
-    option.currentValue = params.value
-    return Promise.resolve({ configOptions })
+    if (params.configId === 'mode') currentMode = params.value
+    if (params.configId === 'model') {
+      if (!option.options.some((entry) => entry.value === params.value)) {
+        return Promise.reject(new Error(`unknown model ${params.value}`))
+      }
+      currentModel = params.value
+    }
+    return Promise.resolve({ configOptions: optionsFor(currentModel) })
   })
   .onRequest(methods.agent.session.prompt, ({ params, client }) => {
     promptCount += 1
@@ -117,6 +142,38 @@ const app = createAcpAgentApp({ name: 'fake-acp-agent' })
     })()
   })
   .onNotification(methods.agent.session.cancel, () => {})
+
+/** The session's current model and mode; the option list depends on them. */
+let currentModel = 'fake-large'
+let currentMode = 'default'
+
+/**
+ * The config options for one model.
+ *
+ * The reasoning selector appears ONLY for a model that has levels, which is how
+ * a real agent behaves and why the client must resolve effort after selecting
+ * the model rather than from the options it first received.
+ * @param {string} model - the selected model id.
+ * @returns {any[]} that model's options.
+ */
+function optionsFor(model) {
+  const reasoning = REASONING_BY_MODEL[model]
+  return [
+    ...configOptions.filter((option) => option.id !== 'mode'),
+    ...reasoning === undefined
+      ? []
+      : [{
+        id: 'reasoning_effort',
+        name: 'Reasoning effort',
+        category: 'thought_level',
+        type: 'select',
+        currentValue: 'medium',
+        options: reasoning,
+      }],
+  ].concat(configOptions.filter((option) => option.id === 'mode').map((option) => ({
+    ...option, currentValue: currentMode,
+  })))
+}
 
 /** Prompts served by this session; drives the cumulative usage totals. */
 let promptCount = 0

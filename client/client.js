@@ -292,7 +292,10 @@ window.__ModuleLoader__.load({
             ? h(AgentForm, {
               t, busy, agent, existingKeys: keys, keyLocked: true, agentKey: key,
               onCancel: () => { setEditing(null) },
-              onSubmit: (draft) => { void save({ ...agents, [key]: draft }) },
+              // AgentForm reports `{ key, agent }` because a NEW agent needs both.
+              // Editing must store only the agent: spreading the envelope wrote
+              // `key` and a nested `agent` into the definition itself.
+              onSubmit: (draft) => { void save({ ...agents, [draft.key]: draft.agent }) },
             })
             : null,
         )

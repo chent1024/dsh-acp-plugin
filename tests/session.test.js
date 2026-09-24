@@ -106,7 +106,30 @@ test('a request carrying a session id resolves its workspace', async () => {
   }
 })
 
-test('a model selection the agent accepts is applied before the prompt', async () => {
+test('applies a model and effort the agent actually supports', async () => {
+  const { llm, fiber } = await boot({
+    agents: { fake: { displayName: 'Fake', command: process.execPath, args: [fakeAgentPath()], cwd: process.cwd() } },
+  })
+  try {
+    // `fake-large` advertises low/medium/high; `fake-small` advertises none.
+    const chunks = await collect(llm, {
+      provider: 'acp:fake',
+      model: 'fake-large',
+      reasoningEffort: 'high',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
+    })
+    const finish = chunks.find((chunk) => chunk.type === 'finish')
+    assert.equal(finish.reason.kind, 'stop', JSON.stringify(finish.reason))
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('refuses an effort the chosen model does not support', async () => {
+  // The harness validates an effort against the model's own capability, so
+  // asking a level-less model for one is refused rather than silently ignored.
+  // That is the point of resolving reasoning per model: before, every model on
+  // the route inherited the same levels.
   const { llm, fiber } = await boot({
     agents: { fake: { displayName: 'Fake', command: process.execPath, args: [fakeAgentPath()], cwd: process.cwd() } },
   })
@@ -118,7 +141,24 @@ test('a model selection the agent accepts is applied before the prompt', async (
       messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
     })
     const finish = chunks.find((chunk) => chunk.type === 'finish')
-    assert.equal(finish.reason.kind, 'stop', JSON.stringify(finish.reason))
+    assert.equal(finish.reason.kind, 'error')
+    assert.equal(finish.reason.failure.code, 'UNSUPPORTED_REASONING_EFFORT')
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('sends no reasoning effort for a model that has none', async () => {
+  const { llm, fiber } = await boot({
+    agents: { fake: { displayName: 'Fake', command: process.execPath, args: [fakeAgentPath()], cwd: process.cwd() } },
+  })
+  try {
+    const chunks = await collect(llm, {
+      provider: 'acp:fake',
+      model: 'fake-small',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
+    })
+    assert.equal(chunks.find((chunk) => chunk.type === 'finish').reason.kind, 'stop')
   } finally {
     await fiber.dispose()
   }
