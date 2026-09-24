@@ -237,3 +237,21 @@ test('fails fast when the agent exits during the handshake', async () => {
   )
   assert.ok(Date.now() - started < 5_000, `took ${Date.now() - started}ms`)
 })
+
+test('a child launched from a minimal PATH still starts', async () => {
+  // The app launches with `/usr/bin:/bin:/usr/sbin:/sbin` while agent CLIs live
+  // on a login-shell path. The connection must widen the child's PATH, or every
+  // `#!/usr/bin/env node` agent fails as if it were not installed.
+  const saved = process.env.PATH
+  process.env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+  try {
+    const connection = await open('ok')
+    try {
+      assert.equal(await connection.newSession(process.cwd()), 'fake-session-1')
+    } finally {
+      await connection.dispose()
+    }
+  } finally {
+    process.env.PATH = saved
+  }
+})
