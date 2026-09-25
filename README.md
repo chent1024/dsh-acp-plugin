@@ -59,6 +59,7 @@ becomes the provider route `acp:<key>`, so `gemini` is selectable as
 | `cwd` | the session workspace | Working directory for the child and its ACP session. |
 | `permission` | `reject` | Permission policy. `allow` also selects the agent's auto-approving session mode, which is what stops the prompts in the first place; `reject` leaves the agent on its own prompting default and answers every request with reject. See [Permission](#permission). |
 | `capabilities` | `none` | Client capabilities to advertise; `fs` offers scoped file reads and writes. |
+| `showCredit` | `false` | Append the agent's disclosed credit multiplier to each model name, e.g. `Ultimate  [2x]` or `Qwen3.8-Flash  [FREE]`. See [Credit multipliers](#credit-multipliers). |
 | `idleTimeoutMs` | `600000` | How long a bound session is kept before its process is released. |
 
 `env` is merged **after** the subprocess seam strips credential-shaped variables
@@ -158,6 +159,34 @@ becomes a named placeholder.
 **An agent's own tool calls are not executed by the harness.** The agent runs
 its tools in its own process. Its tool-call updates are consumed but produce no
 harness tool invocation, so the harness never shows them as executable calls.
+
+## Credit multipliers
+
+Agents disclose per-model cost as text in a model option's `description`, in two
+notations: Qoder writes `Vision · 0.50x Credit` and CodeBuddy writes `x0.34
+credits`. A zero multiplier means the model is free, and both Qoder and CodeBuddy
+offer such models.
+
+The harness model picker renders **only `name`** — `description` reaches it intact
+and is deliberately never displayed, so this text is invisible there. Setting
+`showCredit: true` on an agent appends the multiplier to each model name:
+
+```
+Ultimate         [2x]
+Efficient        [0.3x]
+Qwen3.8-Flash    [FREE]
+```
+
+Only the name changes. The model `id` is what a request carries, so tagging never
+touches it, and a model whose agent discloses nothing keeps its name exactly as
+sent. The field defaults to off because the name also appears in the provider
+directory and the session transcript.
+
+Replacing the shipped picker to render a styled badge is possible — the
+`conversation.input.model` seat accepts an occupant — but it means reproducing
+that component's keyboard navigation, pane switching, and portal placement, and
+maintaining it against product changes. Tagging the name achieves the same
+visibility without shadowing shipped UI.
 
 ## Permission
 

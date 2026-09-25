@@ -57,6 +57,7 @@ bundle patch 会以「零 agent」挂载插件。你可以在模型页面添加�
 | `cwd` | 会话工作区 | 子进程与它 ACP 会话的工作目录。 |
 | `permission` | `reject` | 权限策略。`allow` 还会选择 agent 的自动批准会话模式 —— 真正让询问不再发生的是这个模式；`reject` 让 agent 保持自己的询问默认值，并对每次请求都回答拒绝。见[权限](#权限)。 |
 | `capabilities` | `none` | 声明的客户端能力；`fs` 表示提供受限的文件读写。 |
+| `showCredit` | `false` | 把 agent 披露的倍率追加到模型名后，例如 `Ultimate  [2x]`、`Qwen3.8-Flash  [FREE]`。见[倍率](#倍率)。 |
 | `idleTimeoutMs` | `600000` | 绑定的会话在释放进程前保留多久。 |
 
 `env` 是在子进程缝**剥掉**形如凭据的变量与全部 `DSH_*` 变量**之后**合并的，所以把某个
@@ -138,6 +139,28 @@ agent 期望你先用它自己的 CLI 登录一次，请在 Harness 之外完成
 **agent 自己的工具调用不由 Harness 执行。** agent 在自己的进程里运行它的工具。它的工具
 调用更新会被消费，但不产生 Harness 的工具调用，所以 Harness 不会把它们显示为可执行的
 调用。
+
+## 倍率
+
+各 agent 会在模型选项的 `description` 里以文本形式披露价格，记法有两种：Qoder 写
+`Vision · 0.50x Credit`，CodeBuddy 写 `x0.34 credits`。倍率为 0 表示该模型免费，
+Qoder 与 CodeBuddy 都提供这类模型。
+
+Harness 的模型选择器**只渲染 `name`** —— `description` 会完整送达，但被刻意不显示，
+因此这段文本在选择器里看不见。给 agent 设置 `showCredit: true` 会把倍率追加到模型名后：
+
+```
+Ultimate         [2x]
+Efficient        [0.3x]
+Qwen3.8-Flash    [FREE]
+```
+
+只改名称。模型 `id` 才是请求携带的值，因此打标签绝不触碰它；而 agent 未披露任何倍率的
+模型，其名称原样保留。该字段默认关闭，因为名称还会出现在 provider 目录与会话记录里。
+
+替换产品自带的选择器以渲染带样式的徽章是可行的 —— `conversation.input.model` 槽位接受
+占用者 —— 但那意味着要重建该组件的键盘导航、面板切换与 portal 定位，并跟随产品变更维护。
+给名称打标签能达到同样的可见性，且不遮蔽产品 UI。
 
 ## 权限
 

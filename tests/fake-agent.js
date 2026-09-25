@@ -38,8 +38,10 @@ const configOptions = [
     type: 'select',
     currentValue: 'fake-large',
     options: [
-      { value: 'fake-large', name: 'Fake Large' },
-      { value: 'fake-small', name: 'Fake Small' },
+      // `description` carries the credit notation two real CLIs use, so the
+      // tagging path is exercised against text that actually occurs.
+      { value: 'fake-large', name: 'Fake Large', description: 'Reasoning · Vision · 0.00x Credit' },
+      { value: 'fake-small', name: 'Fake Small', description: 'Vision · New' },
     ],
   },
   {

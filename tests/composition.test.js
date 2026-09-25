@@ -345,3 +345,44 @@ test('the panel probe names an unknown agent instead of answering emptily', asyn
     await fiber.dispose()
   }
 })
+
+test('showCredit surfaces the multiplier the harness picker would not show', async () => {
+  // The picker renders only `name`, so a multiplier an agent discloses in
+  // `description` never reaches the user there. This asserts the config field
+  // actually carries it into the catalog the harness reads.
+  const { llm, fiber } = await boot({
+    agents: {
+      fake: {
+        displayName: 'Fake', command: process.execPath, args: [fakeAgentPath()],
+        cwd: process.cwd(), showCredit: true,
+      },
+    },
+  })
+  try {
+    const models = await llm.listModels('acp:fake')
+    const large = models.find((model) => model.id === 'fake-large')
+    assert.match(large.name, /\[FREE\]$/, `expected a credit tag, got ${large.name}`)
+    // The id is what a request carries, so it must be untouched.
+    assert.equal(large.id, 'fake-large')
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('a model with no disclosed credit keeps its plain name', async () => {
+  const { llm, fiber } = await boot({
+    agents: {
+      fake: {
+        displayName: 'Fake', command: process.execPath, args: [fakeAgentPath()],
+        cwd: process.cwd(), showCredit: true,
+      },
+    },
+  })
+  try {
+    const models = await llm.listModels('acp:fake')
+    const small = models.find((model) => model.id === 'fake-small')
+    assert.equal(small.name, 'Fake Small')
+  } finally {
+    await fiber.dispose()
+  }
+})
