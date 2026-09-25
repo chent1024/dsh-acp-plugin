@@ -62,8 +62,6 @@ window.__ModuleLoader__.load({
         permission: '权限策略',
         permissionReject: '拒绝（无人值守，默认）',
         permissionAllow: '允许一次',
-        showCredit: '在模型名后显示倍率',
-        showCreditHint: '把 agent 披露的倍率加进模型名，例如 "Ultimate  [2x]"、"Qwen3.8-Flash  [FREE]"。模型选择器只显示名称，因此这是让它可见的唯一方式。',
         capabilities: '客户端能力',
         capabilitiesNone: '不声明（最保守）',
         capabilitiesFs: '文件读写',
@@ -105,8 +103,6 @@ window.__ModuleLoader__.load({
         permission: 'Permission policy',
         permissionReject: 'Reject (unattended, default)',
         permissionAllow: 'Allow once',
-        showCredit: 'Tag model names with their multiplier',
-        showCreditHint: 'Appends the multiplier the agent discloses, e.g. "Ultimate  [2x]" or "Qwen3.8-Flash  [FREE]". The model picker renders only the name, so this is the only way to surface it there.',
         capabilities: 'Client capabilities',
         capabilitiesNone: 'Advertise none (most conservative)',
         capabilitiesFs: 'File read/write',
@@ -345,7 +341,6 @@ window.__ModuleLoader__.load({
       const [cwd, setCwd] = React.useState(source.cwd ?? '')
       const [permission, setPermission] = React.useState(source.permission ?? 'reject')
       const [capabilities, setCapabilities] = React.useState(source.capabilities ?? 'none')
-      const [showCredit, setShowCredit] = React.useState(source.showCredit === true)
       const [error, setError] = React.useState(null)
 
       const submit = () => {
@@ -373,7 +368,11 @@ window.__ModuleLoader__.load({
             ...cwd.trim().length === 0 ? {} : { cwd: cwd.trim() },
             permission,
             capabilities,
-            showCredit,
+            // The form does not manage these, and saving replaces the whole
+            // agent dict, so an unmanaged field would otherwise be dropped on
+            // every edit — which silently reset `idleTimeoutMs`.
+            ...source.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: source.idleTimeoutMs },
+            ...source.showCredit === undefined ? {} : { showCredit: source.showCredit },
           },
         })
       }
@@ -419,12 +418,6 @@ window.__ModuleLoader__.load({
           h('option', { value: 'reject' }, t('permissionReject')),
           h('option', { value: 'allow' }, t('permissionAllow')),
         )),
-        field(t('showCredit'), t('showCreditHint'), h('input', {
-          type: 'checkbox',
-          className: 'acpa-check',
-          checked: showCredit,
-          onChange: (event) => { setShowCredit(event.target.checked) },
-        })),
         field(t('capabilities'), null, h('select', {
           className: 'acpa-select', value: capabilities,
           onChange: (event) => { setCapabilities(event.target.value) },

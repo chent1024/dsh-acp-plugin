@@ -89,7 +89,10 @@ test('lists the agent model catalog through the real registry', async () => {
   try {
     const models = await llm.listModels('acp:fake')
     assert.deepEqual(models.map((model) => model.id), ['fake-large', 'fake-small'])
-    assert.equal(models[0].name, 'Fake Large')
+    // Tagging is on by default, so the disclosed multiplier is in the name the
+    // picker renders. The id stays the value a request carries.
+    assert.equal(models[0].name, 'Fake Large  [FREE]')
+    assert.equal(models[0].id, 'fake-large')
   } finally {
     await fiber.dispose()
   }
@@ -346,24 +349,47 @@ test('the panel probe names an unknown agent instead of answering emptily', asyn
   }
 })
 
-test('showCredit surfaces the multiplier the harness picker would not show', async () => {
+test('shows the multiplier by default, with no opt-in', async () => {
   // The picker renders only `name`, so a multiplier an agent discloses in
-  // `description` never reaches the user there. This asserts the config field
-  // actually carries it into the catalog the harness reads.
+  // `description` never reaches the user there. Tagging is therefore on by
+  // default: an agent configured without the field still gets it.
+  const { llm, fiber } = await boot()
+  try {
+    const models = await llm.listModels('acp:fake')
+    const large = models.find((model) => model.id === 'fake-large')
+    assert.equal(large.name, 'Fake Large  [FREE]')
+    assert.equal(large.id, 'fake-large')
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('a stored agent that predates the field is tagged', async () => {
+  // The profile holds agents written before `showCredit` existed. They carry no
+  // such field, so the default must be what decides — not the stored value.
+  const { llm, fiber } = await boot({
+    agents: { fake: { displayName: 'Fake', command: process.execPath, args: [fakeAgentPath()], cwd: process.cwd() } },
+  })
+  try {
+    const models = await llm.listModels('acp:fake')
+    assert.match(models.find((model) => model.id === 'fake-large').name, /\[FREE\]$/)
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('showCredit: false opts an agent out of tagging', async () => {
   const { llm, fiber } = await boot({
     agents: {
       fake: {
         displayName: 'Fake', command: process.execPath, args: [fakeAgentPath()],
-        cwd: process.cwd(), showCredit: true,
+        cwd: process.cwd(), showCredit: false,
       },
     },
   })
   try {
     const models = await llm.listModels('acp:fake')
-    const large = models.find((model) => model.id === 'fake-large')
-    assert.match(large.name, /\[FREE\]$/, `expected a credit tag, got ${large.name}`)
-    // The id is what a request carries, so it must be untouched.
-    assert.equal(large.id, 'fake-large')
+    assert.equal(models.find((model) => model.id === 'fake-large').name, 'Fake Large')
   } finally {
     await fiber.dispose()
   }
