@@ -266,3 +266,82 @@ test('registers the subagent provider on the real service and withdraws it on di
   }
   assert.deepEqual(names(), [])
 })
+
+test('the panel probe answers what the Test connection button needs', async () => {
+  // The exact path the Models card's button takes: the plugin publishes a route
+  // on `connection`, and the card POSTs `{ endpoint: 'probe', payload: { key } }`.
+  // Nothing else in this suite covered it, so a break here would reach the user
+  // as "Test connection" failing with no test to catch it.
+  const routes = []
+  class Connection extends Service {
+    constructor(scope) {
+      super(scope, 'connection')
+      this.fetch = { register: (route) => { routes.push(route); return async () => {} } }
+    }
+  }
+  const ctx = new Context()
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'subprocess') }
+    spawn(spec) { return spawnThroughSeam(spec) }
+  })
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'sessions') }
+    get() { return undefined }
+  })
+  await ctx.plugin(Connection)
+  const fiber = await ctx.plugin({ name, inject, apply, Config }, {
+    agents: { fake: { displayName: 'Fake', command: process.execPath, args: [fakeAgentPath()], cwd: process.cwd() } },
+  })
+  try {
+    assert.equal(routes.length, 1, 'the panel route must be published')
+    const response = await routes[0].fetch(new Request('http://x/api/acp-agents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endpoint: 'probe', payload: { key: 'fake' } }),
+    }))
+    const body = await response.json()
+    assert.equal(body.ok, true, JSON.stringify(body.error))
+    assert.ok(body.value.models.length > 0, 'the probe must report the model catalog')
+    assert.ok(Array.isArray(body.value.modes), 'the probe must report the permission modes')
+    // Reasoning is keyed by model, so the card can show each model its own set.
+    assert.ok(body.value.reasoningByModel['fake-large'], 'a model with levels must report them')
+    assert.equal(body.value.reasoningByModel['fake-small'], undefined)
+  } finally {
+    await fiber.dispose()
+  }
+})
+
+test('the panel probe names an unknown agent instead of answering emptily', async () => {
+  const routes = []
+  class Connection extends Service {
+    constructor(scope) {
+      super(scope, 'connection')
+      this.fetch = { register: (route) => { routes.push(route); return async () => {} } }
+    }
+  }
+  const ctx = new Context()
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'subprocess') }
+    spawn(spec) { return spawnThroughSeam(spec) }
+  })
+  await ctx.plugin(class extends Service {
+    constructor(scope) { super(scope, 'sessions') }
+    get() { return undefined }
+  })
+  await ctx.plugin(Connection)
+  const fiber = await ctx.plugin({ name, inject, apply, Config }, { agents: {} })
+  try {
+    const response = await routes[0].fetch(new Request('http://x/api/acp-agents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endpoint: 'probe', payload: { key: 'nope' } }),
+    }))
+    const body = await response.json()
+    assert.equal(body.ok, false)
+    assert.match(String(body.error.message), /nope/)
+  } finally {
+    await fiber.dispose()
+  }
+})
